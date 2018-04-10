@@ -1,14 +1,21 @@
 #include <DRV8835MotorShield.h>
 
-#define MAX_SPEED_L 250.0
-#define MAX_SPEED_R 200.0
-
+#define MAX_SPEED_L 142.0 //135 //142
+#define MAX_SPEED_R 130.0 //120 //130
+#define loopUpdate 9
 DRV8835MotorShield motors;
 
 int m1CurSpeed;
 int m2CurSpeed;
 int vL, vR;
 
+unsigned long hardTurnCooldown = 1000;
+unsigned long hardTurnTimer;
+
+int prevPins = 0;
+int loopCount;
+int pinTotal[loopUpdate];
+int highestIndex=0;
 // Perform these steps with the Arduino is first powered on
 void setup()
 {
@@ -23,35 +30,84 @@ void setup()
 
   while(digitalRead(3) == 0)
   {}
+  pinTotal[0] = 0;
 }
 
 // This code repeats indefinitely
 void loop()
 {
-  int pins = PIND;                           // Get values of pins D0-D7
+  unsigned long loopStartTime = millis();
+                           // Get values of pins D0-D7
   
   DDRD |= B11110000;                         // Set direction of Arduino pins D4-D7 as OUTPUT
   PORTD |= B11110000;                        // Set level of Arduino pins D4-D7 to HIGH
-  delayMicroseconds(230);                    // Short delay to allow capacitor charge in QTI module
+  delayMicroseconds(230); //230                   // Short delay to allow capacitor charge in QTI module
   DDRD &= B00001111;                         // Set direction of pins D4-D7 as INPUT
   PORTD &= B00001111;                        // Set level of pins D4-D7 to LOW
   delayMicroseconds(230);                    // Short delay
+  int pins = PIND;  
   pins >>= 4;                                // Drop off first four bits of the port; keep only pins D4-D7
+  //pins = pins ^ B1111; //1=black, 0=white
+  //byte binPins = (byte) pins;
+  /*
+  if(loopCount < loopUpdate){
+    pinTotal[loopCount] = pins;
+  }else{
+    loopCount = 0;
+    int majority[loopUpdate];
+    //majority[0] = 1; means 1 instance of whatever in in pinTotal[0]
+    highestIndex = 0;
+    for( int i=0; i < loopUpdate; i++){
+      boolean found = false;
+      for(int j=0; j < i; j++){
+        if(pinTotal[j] == pinTotal[i]){//matching with first/original majority[j]
+          found = true;
+          majority[j] +=1;
+          if(majority[highestIndex] < majority[j]){
+            highestIndex = j;
+          }
+          j = i;
+        }
+      }
+      if(!found){
+        majority[i] = 1;
+      }
+    }
+    Serial.print("Average: ");
+    Serial.println(pins, BIN);
+  }
+  pins = pinTotal[highestIndex];
+  */
+  
+  if(pins == B0001 || pins == B1000){
+    hardTurnTimer = loopStartTime + hardTurnCooldown;
+  }
+  int correctionPins = prevPins;
+  if(pins == B0000 && prevPins == B0001){
+    pins = B0001;
+    /*
+    if(loopStartTime > hardTurnTimer){
+      pins = B0011;
+    }*/
+  }
+  else if(pins == B0000 && prevPins == B1000){
+    pins = B1000;
+    /*
+    if(loopStartTime > hardTurnTimer){
+      pins = B1100;
+    }*/
+  }
+  else{
+    prevPins = pins;
+  }
+  
   
   // Determine how to steer based on state of the four QTI sensors
   int turn7 = 100;
-  int slightTurn = 70;
-  int medTurn = 50;
-  int hardTurn = 5;
-  byte binPins = (byte) pins;
- 
-  //pins = pins ^ B1111; //1=black, 0=white
-  
-  //String pString = (String) binPins;
-  //Serial.println(binPins);
-  //Serial.println(pString);
-  Serial.println(pins, BIN);
-
+  int slightTurn = 60; //70      //90 for line refinding code version
+  int medTurn = 30; //30         //70 
+  int hardTurn = 0; //15        //60
+  //60, 30, 0 works
   switch(pins)                               // Compare pins to known line following states
   {
     case B1000:  //hard left                      
@@ -102,6 +158,8 @@ void loop()
 
   //set new target speed to reach
   controlSpeed((int)(((double)(MAX_SPEED_L * vL)/100.0)), (int)(((double)(MAX_SPEED_R * vR)/100.0)), loopStartTime);
+  //controlSpeed((int)MAX_SPEED_L, (int)(((double)(MAX_SPEED_R * 70)/100.0)), loopStartTime);
+  //loopCount++;
 }
 
 void controlSpeed(int m1TargetSpeed, int m2TargetSpeed, unsigned long stTime){
@@ -141,6 +199,7 @@ void setMotorSpeeds(){
   //set motors
   //Serial.println("m1 write: " + (String)m1CurSpeed);
   motors.setM2Speed(m2CurSpeed);
+  delay(10); 
   motors.setM1Speed(m1CurSpeed);
 }
 
